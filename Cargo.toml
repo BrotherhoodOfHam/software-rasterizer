@@ -1,0 +1,9 @@
+[package]
+name = "HelloWorld"
+version = "0.1.0"
+authors = ["BrotherhoodOfHam <thomas.street@florimont.com>"]
+edition = "2018"
+
+[dependencies]
+image="*"
+quick-xml="*"
