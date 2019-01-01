@@ -8,15 +8,14 @@ extern crate cgmath;
 mod utils;
 mod model;
 
+use image::*;
 use cgmath::*;
-type V2 = Vector2<f32>;
-type V3 = Vector3<f32>;
 
 /***********************************************************************************/
 
 struct Painter
 {
-    frame_buffer: image::RgbImage,
+    frame_buffer: RgbImage,
     depth_buffer: Box<[f32]>
 }
 
@@ -24,7 +23,7 @@ impl Painter
 {
     pub fn new(width: u32, height: u32) -> Painter
     {
-        let mut v = Vec::new();
+        let mut v: Vec<f32> = Vec::new();
         v.resize((width * height) as usize, std::f32::MAX);
 
         Painter {
@@ -39,7 +38,7 @@ impl Painter
     }
 
     // Edge function
-    fn edge(v0: &V2, v1: &V2, p: &V2) -> f32
+    fn edge(v0: &Vector2<f32>, v1: &Vector2<f32>, p: &Vector2<f32>) -> f32
     {
         let a = p - v0;
         let b = v1 - v0;
@@ -48,24 +47,24 @@ impl Painter
 
     // Take a position p in raster space to the triangle a->b->c and return it's corresponding 
     // barycentric coordinates iff the triangle encloses p
-    fn map_triangle_pos(p: &V2, a: &V3, b: &V3, c: &V3) -> Option<V3>
+    fn map_triangle_pos(p: &Vector2<f32>, a: &Vector2<f32>, b: &Vector2<f32>, c: &Vector2<f32>) -> Option<Vector3<f32>>
     {
         // The edge function gives 2 * the area of the triangle formed by the 3 given vectors
-        let area = Self::edge(&xy(&a), &xy(&b), &xy(&c));
+        let area = Self::edge(a, b, c);
         // The result of the edge function is also used to find the barycentric coordinates
-        let w0 = Self::edge(&xy(&b), &xy(&c), p);
-        let w1 = Self::edge(&xy(&c), &xy(&a), p);
-        let w2 = Self::edge(&xy(&a), &xy(&b), p);
+        let w0 = Self::edge(b, c, p);
+        let w1 = Self::edge(c, a, p);
+        let w2 = Self::edge(a, b, p);
 
         //If point is inside triangle
         if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0
         {
             //Normalize barycentric coordinates
-            return Some(V3{
-                x: w0 / area,
-                y: w1 / area,
-                z: w2 / area
-            })
+            return Some(Vector3::new(
+                w0 / area,
+                w1 / area,
+                w2 / area
+            ))
         }
 
         None
@@ -83,29 +82,31 @@ impl Painter
         let xmin = Self::clamp(min.x, self.frame_buffer.width());
         let ymax = Self::clamp(max.y, self.frame_buffer.height());
         let ymin = Self::clamp(min.y, self.frame_buffer.height());
+
         for y in ymin..=ymax
         {
             for x in xmin..=xmax
             {
+                let idx = ((y * self.frame_buffer.width()) + x) as usize;
+
+                let centre = Vector2::new(0.5, 0.5);
+                let p = Vector2::new(x as f32, y as f32) + centre;
+
                 if let Some(bcoords) = Self::map_triangle_pos(
-                    &V2{x: x as f32,y: y as f32},
-                    &a.pos, &b.pos, &c.pos)
+                    &p,
+                    &xy(&a.pos), &xy(&b.pos), &xy(&c.pos))
                 {
                     let vtx = model::Vertex::interpolate(&a, &b, &c, &bcoords);
                     
-                    //println!("{}", vtx.pos.z);
-
-                    let idx = ((y * self.frame_buffer.width()) + x) as usize;
                     if vtx.pos.z < self.depth_buffer[idx]
                     {
                         self.depth_buffer[idx] = vtx.pos.z;
-
+                        
                         let pixel = image::Pixel::from_channels(
                             (255.0 * vtx.colour.x) as u8,
                             (255.0 * vtx.colour.y) as u8,
                             (255.0 * vtx.colour.z) as u8,
                             0);
-
                         self.frame_buffer.put_pixel(x, y, pixel);
                     }
                 }
@@ -119,10 +120,10 @@ impl Painter
     fn to_raster_space(&self, vtx: &model::Vertex) -> model::Vertex
     {
         let vector = vtx.pos;
-        let d = V2::new(self.frame_buffer.width() as f32, self.frame_buffer.height() as f32);
+        let d = Vector2::new(self.frame_buffer.width() as f32, self.frame_buffer.height() as f32);
         
         let mut new_vtx = vtx.clone();
-        new_vtx.pos = V3::new(((vector.x + 1.0) / 2.0) * d.x, ((vector.y + 1.0) / 2.0) * d.y, vector.z);
+        new_vtx.pos = Vector3::new(((vector.x + 1.0) / 2.0) * d.x, ((vector.y + 1.0) / 2.0) * d.y, vector.z);
         new_vtx
     }
 
@@ -134,8 +135,6 @@ impl Painter
             let a = &model[i + 0];
             let b = &model[i + 1];
             let c = &model[i + 2];
-
-            //println!("{:?} => {:?} => {:?}", a, b, c);
 
             self.draw_triangle(
                 &self.to_raster_space(&a),
@@ -158,15 +157,14 @@ impl Painter
             self.frame_buffer.width(), self.frame_buffer.height(),
             image::ColorType::Gray(1)
         ).unwrap();
-        */
+        // */
     }
 }
 
 
 fn main() {
-    
     let mut p = Painter::new(512, 512);
-    let view = Matrix4::look_at(Point3::new(2.0, -5.0, -2.0), Point3::new(0.0, 0.0, 0.0), V3::new(0.0, 0.0, 1.0));
+    let view = Matrix4::look_at(Point3::new(1.5, -3.0, -2.0), Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     let proj = perspective(Deg(90.0), 1.0, 0.01, 10.0);
 
     let mut model = model::get_cube_model();
@@ -180,17 +178,17 @@ fn main() {
 
 /***********************************************************************************/
 
-fn xy(v: &V3) -> V2
+fn xy(v: &Vector3<f32>) -> Vector2<f32>
 {
-    V2{ x: v.x, y: v.y }
+    Vector2::new(v.x, v.y)
 }
 
-fn max(a: &V3, b: &V3) -> V3
+fn max(a: &Vector3<f32>, b: &Vector3<f32>) -> Vector3<f32>
 {
-    V3 { x: utils::max(a.x, b.x), y: utils::max(a.y, b.y), z: utils::max(a.z, b.z) }
+    Vector3::new(utils::max(a.x, b.x), utils::max(a.y, b.y), utils::max(a.z, b.z))
 }
 
-fn min(a: &V3, b: &V3) -> V3
+fn min(a: &Vector3<f32>, b: &Vector3<f32>) -> Vector3<f32>
 {
-    V3 { x: utils::min(a.x, b.x), y: utils::min(a.y, b.y), z: utils::min(a.z, b.z) }
+    Vector3::new(utils::min(a.x, b.x), utils::min(a.y, b.y), utils::min(a.z, b.z))
 }
